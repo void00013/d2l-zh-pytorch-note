@@ -112,3 +112,290 @@ print(b)
 print(a + b)
 ```
 
+```python
+# 4.索引和切片
+import torch
+
+X = torch.arange(12, dtype=torch.float32).reshape((3,4))
+print(X[-1])
+print(X[1:3])
+
+X[1, 2] = 9
+print(X)
+
+# 给第一行第二行全部赋值为12
+X[0:2, :] = 12
+print(X)
+```
+
+```python
+# 5.节省内存
+import torch
+
+X = torch.arange(12, dtype=torch.float32).reshape((3,4))
+Y = torch.tensor([[2.0, 1, 4, 3], [1, 2, 3, 4], [4, 3, 2, 1]])
+before = id(Y)
+Y = Y + X
+print(id(Y) == before)
+
+# 我们不想总是不必要地分配内存。在机器学习中，我们可能有数百兆的参数，并且在⼀秒内多次更新所有参数。通常情况下，我们希望原地执⾏这些更新。其次，如果我们不原地更新，其他引⽤仍然会指向旧的内存位置，这样我们的某些代码可能会⽆意中引⽤旧的参数。
+# 执⾏原地操作⾮常简单，我们可以使⽤切⽚表⽰法将操作的结果分配给先前分配的数组
+Z = torch.zeros_like(Y)
+print('id(Z):', id(Z))
+Z[:] = X + Y
+print('id(Z):', id(Z))
+
+# 如果在后续计算中没有重复使⽤X，我们也可以使⽤X[:] = X + Y或X += Y来减少操作的内存开销。
+before = id(X)
+X += Y
+print(id(X) == before)
+```
+
+```python
+# 6.转换为其他python对象
+import torch
+
+X = torch.arange(12, dtype=torch.float32).reshape((3,4))
+Y = torch.tensor([[2.0, 1, 4, 3], [1, 2, 3, 4], [4, 3, 2, 1]])
+
+# 将深度学习框架定义的张量转换为NumPy张量很容易，反之也同样容易。torch张量和numpy数组将共享它们的底层内存，就地操作更改⼀个张量也会同时更改另⼀个张量。
+A = X.numpy()
+B = torch.tensor(A)
+print(type(A))
+print(type(B))
+
+# 要将⼤⼩为1的张量转换为Python标量，我们可以调⽤item函数或Python的内置函数。
+a = torch.tensor([3.5])
+print(a, a.item(), float(a), int(a))
+```
+
+## 2.2 数据预处理
+
+```python
+# 1.读取数据集
+import os
+import pandas as pd
+
+os.makedirs(os.path.join('..', 'data'), exist_ok=True)
+data_file = os.path.join('..', 'data', 'house_tiny.csv')
+
+with open(data_file, 'w') as f:
+    f.write('NumRooms,Alley,Price\n') # 列名
+    f.write('NA,Pave,127500\n') # 每⾏表⽰⼀个数据样本
+    f.write('2,NA,106000\n')
+    f.write('4,NA,178100\n')
+    f.write('NA,NA,140000\n')
+
+# 加载原始数据集
+data = pd.read_csv(data_file)
+print(data)
+```
+
+```python
+# 2.处理缺失值
+import os
+import pandas as pd
+
+os.makedirs(os.path.join('..', 'data'), exist_ok=True)
+data_file = os.path.join('..', 'data', 'house_tiny.csv')
+
+with open(data_file, 'w') as f:
+    f.write('NumRooms,Alley,Price\n') # 列名
+    f.write('NA,Pave,127500\n') # 每⾏表⽰⼀个数据样本
+    f.write('2,NA,106000\n')
+    f.write('4,NA,178100\n')
+    f.write('NA,NA,140000\n')
+
+data = pd.read_csv(data_file)
+
+# “NaN”项代表缺失值。为了处理缺失的数据，典型的⽅法包括插值法和删除法，其中插值法⽤⼀个替代值弥补缺失值，⽽删除法则直接忽略缺失值。在这⾥，我们将考虑插值法。通过位置索引iloc，我们将data分成inputs和outputs，其中前者为data的前两列，⽽后者为data的最后⼀列。对于inputs中缺少的数值，我们⽤同⼀列的均值替换“NaN”项。
+inputs, outputs = data.iloc[:, 0:2], data.iloc[:, 2]
+inputs = inputs.fillna(inputs.mean())
+print(inputs)
+
+# 对于inputs中的类别值或离散值，我们将“NaN”视为⼀个类别。由于“巷⼦类型”（“Alley”）列只接受两种类型的类别值“Pave”和“NaN”，pandas可以⾃动将此列转换为两列“Alley_Pave”和“Alley_nan”。巷⼦类型为“Pave”的⾏会将“Alley_Pave”的值设置为1，“Alley_nan”的值设置为0。缺少巷⼦类型的⾏会将“Alley_Pave”和“Alley_nan”分别设置为0和1。
+inputs = pd.get_dummies(inputs, dummy_na=True)
+print(inputs)
+```
+
+```python
+# 3.转换为张量格式
+import os
+import torch
+import pandas as pd
+
+os.makedirs(os.path.join('..', 'data'), exist_ok=True)
+data_file = os.path.join('..', 'data', 'house_tiny.csv')
+
+with open(data_file, 'w') as f:
+    f.write('NumRooms,Alley,Price\n') # 列名
+    f.write('NA,Pave,127500\n') # 每⾏表⽰⼀个数据样本
+    f.write('2,NA,106000\n')
+    f.write('4,NA,178100\n')
+    f.write('NA,NA,140000\n')
+
+data = pd.read_csv(data_file)
+
+inputs, outputs = data.iloc[:, 0:2], data.iloc[:, 2]
+inputs = inputs.fillna(inputs.mean())
+
+inputs = pd.get_dummies(inputs, dummy_na=True)
+
+# 现在inputs和outputs中的所有条⽬都是数值类型，它们可以转换为张量格式。当数据采⽤张量格式后，可以通过在 2.1节中引⼊的那些张量函数来进⼀步操作。
+X, y = torch.tensor(inputs.values), torch.tensor(outputs.values)
+
+print(X)
+print(y)
+```
+
+## 2.3 线性代数
+
+```python
+# 1.标量
+import torch
+
+x = torch.tensor(3.0)
+y = torch.tensor(2.0)
+print(x + y)
+print(x * y)
+print(x / y)
+print(x ** y)
+```
+
+```python
+# 2.向量
+import torch
+
+x = torch.arange(4)
+print(x)
+print(x[3])
+print(len(x))
+print(x.shape)
+```
+
+```python
+# 3.矩阵
+import torch
+
+A = torch.arange(20).reshape(5, 4)
+print(A)
+print(A.T)
+
+B = torch.tensor([[1, 2, 3], [2, 0, 4], [3, 4, 5]])
+print(B)
+print(B == B.T)
+```
+
+```python
+# 4.张量
+import torch
+
+X = torch.arange(24).reshape(2, 3, 4)
+print(X)
+```
+
+```python
+# 5.张量算法的基本性质
+import torch
+
+A = torch.arange(20, dtype=torch.float32).reshape(5, 4)
+B = A.clone() # 通过分配新内存，将A的⼀个副本分配给B
+print(A)
+print(A + B)
+print(A * B)
+
+a = 2
+X = torch.arange(24).reshape(2, 3, 4)
+print(a + X)
+print((a * X).shape)
+```
+
+```python
+# 6.降维
+import torch
+
+x = torch.arange(4, dtype=torch.float32)
+print(x)
+print(x.sum())
+
+A = torch.arange(20, dtype=torch.float32).reshape(5, 4)
+print(A.shape)
+print(A.sum())
+
+# 沿轴0相加
+A_sum_axis0 = A.sum(axis=0)
+print(A_sum_axis0)
+print(A_sum_axis0.shape)
+
+# 沿轴1相加
+A_sum_axis1 = A.sum(axis=1)
+print(A_sum_axis1)
+print(A_sum_axis1.shape)
+
+# 沿两个轴相加
+print(A.sum(axis=[0, 1]))
+
+# 求平均
+print(A.mean())
+print(A.sum() / A.numel())
+
+# 沿轴0求平均
+print(A.mean(axis=0))
+print(A.sum(axis=0) / A.shape[0])
+
+# 非降维求和
+sum_A = A.sum(axis=1, keepdims=True)
+print(sum_A)
+print(A / sum_A)
+
+# 沿某个轴计算A元素的累积总和
+print(A.cumsum(axis=0))
+```
+
+```python
+# 7.点积
+import torch
+
+x = torch.arange(4, dtype=torch.float32)
+y = torch.ones(4, dtype=torch.float32)
+print(x, y, torch.dot(x, y))
+print(torch.sum(x * y))
+```
+
+```python
+# 8.矩阵-向量积
+import torch
+
+x = torch.arange(4, dtype=torch.float32)
+A = torch.arange(20, dtype=torch.float32).reshape(5, 4)
+print(A.shape)
+print(x.shape)
+print(torch.mv(A, x))
+```
+
+```python
+# 9.矩阵-矩阵乘法
+import torch
+
+A = torch.arange(20, dtype=torch.float32).reshape(5, 4)
+B = torch.ones(4, 3)
+print(torch.mm(A, B))
+```
+
+```python
+# 10.范数
+import torch
+
+u = torch.tensor([3.0, -4.0])
+# 向量的L2范数。
+print(torch.norm(u))
+# 向量的L1范数。
+print(torch.abs(u).sum())
+# Frobenius范数满⾜向量范数的所有性质，它就像是矩阵形向量的L2范数。调⽤以下函数将计算矩阵的Frobenius范数。
+print(torch.norm(torch.ones((4, 9))))
+```
+
+## 2.4 微积分
+
+
+
