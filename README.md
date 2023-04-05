@@ -40,6 +40,8 @@
 
 **迁移学习**：可以使我们在他人训练过的模型基础上进行小改动便可投入使用。
 
+***
+
 # 二、预备知识
 
 ## 2.1 数据操作
@@ -397,5 +399,708 @@ print(torch.norm(torch.ones((4, 9))))
 
 ## 2.4 微积分
 
+```python
+import numpy as np
+from matplotlib_inline import backend_inline
+from d2l import torch as d2l
 
 
+def f(x):
+    return 3 * x ** 2 - 4 * x
+
+
+# 求导函数
+def numerical_lim(f, x, h):
+    return (f(x + h) - f(x)) / h
+
+
+h = 0.1
+for i in range(5):
+    print(f'h={h:.5f}, numerical limit={numerical_lim(f, 1, h):.5f}')
+    h *= 0.1
+
+
+# 注释#@save是⼀个特殊的标记，会将对应的函数、类或语句保存在d2l包中。因此，以后⽆须重新定义就可以直接调⽤它们，（例如，d2l.use_svg_display()）。
+def use_svg_display():  #@save
+    # """使⽤svg格式在Jupyter中显⽰绘图"""
+    backend_inline.set_matplotlib_formats('svg')
+
+
+# 设置图表⼤⼩
+def set_figsize(figsize=(3.5, 2.5)):    #@save
+    # """设置matplotlib的图表⼤⼩"""
+    use_svg_display()
+    d2l.plt.rcParams['figure.figsize'] = figsize
+
+
+# 设置由matplotlib⽣成图表的轴的属性。
+#@save
+def set_axes(axes, xlabel, ylabel, xlim, ylim, xscale, yscale, legend):
+    # """设置matplotlib的轴"""
+    axes.set_xlabel(xlabel)
+    axes.set_ylabel(ylabel)
+    axes.set_xscale(xscale)
+    axes.set_yscale(yscale)
+    axes.set_xlim(xlim)
+    axes.set_ylim(ylim)
+    if legend:
+        axes.legend(legend)
+    axes.grid()
+
+
+
+#@save
+def plot(X, Y=None, xlabel=None, ylabel=None, legend=None, xlim=None,
+    ylim=None, xscale='linear', yscale='linear',
+    fmts=('-', 'm--', 'g-.', 'r:'), figsize=(3.5, 2.5), axes=None):
+    """绘制数据点"""
+    if legend is None:
+        legend = []
+    set_figsize(figsize)
+    axes = axes if axes else d2l.plt.gca()
+    # 如果X有⼀个轴，输出True
+    def has_one_axis(X):
+        return (hasattr(X, "ndim") and X.ndim == 1 or isinstance(X, list) and not hasattr(X[0], "__len__"))
+    if has_one_axis(X):
+        X = [X]
+    if Y is None:
+        X, Y = [[]] * len(X), X
+    elif has_one_axis(Y):
+        Y = [Y]
+    if len(X) != len(Y):
+        X = X * len(Y)
+    axes.cla()
+    for x, y, fmt in zip(X, Y, fmts):
+        if len(x):
+            axes.plot(x, y, fmt)
+        else:
+            axes.plot(y, fmt)
+    set_axes(axes, xlabel, ylabel, xlim, ylim, xscale, yscale, legend)
+
+
+x = np.arange(0, 3, 0.1)
+plot(x, [f(x), 2 * x - 3], 'x', 'f(x)', legend=['f(x)', 'Tangent line (x=1)'])
+```
+
+## 2.5 自动微分
+
+```python
+# 1.例子.py
+import torch
+
+x = torch.arange(4.0)
+print(x)
+
+x.requires_grad_(True) # 等价于x=torch.arange(4.0,requires_grad=True)
+# 使用x.grad保存梯度, 不会在每次对⼀个参数求导时都分配新的内存, ⼀个标量函数关于向量x的梯度是向量，并且与x具有相同的形状。
+print(x.grad) # 默认值是None
+
+y = 2 * torch.dot(x, x)
+print(y)
+
+y.backward()
+print(x.grad)
+
+x.grad == 4 * x
+print(x.grad)
+
+# 在默认情况下，PyTorch会累积梯度，我们需要清除之前的值
+x.grad.zero_()
+y = x.sum()
+print(y)
+y.backward()
+print(x.grad)
+```
+
+```python
+# 2.非标量变量的反向传播.py
+import torch
+
+x = torch.arange(4.0)
+x.requires_grad_(True) # 等价于x=torch.arange(4.0,requires_grad=True)
+
+y = x * x
+# 等价于y.backward(torch.ones(len(x)))
+y.sum().backward()
+print(x.grad)
+```
+
+```python
+# 3.分离计算.py
+import torch
+
+x = torch.arange(4.0)
+
+x.requires_grad_(True) # 等价于x=torch.arange(4.0,requires_grad=True)
+
+# x.grad.zero_()
+y = x * x
+u = y.detach()
+z = u * x
+z.sum().backward()
+print(u, x.grad)
+print(x.grad == u)
+
+x.grad.zero_()
+y.sum().backward()
+print(x.grad == 2 * x)
+```
+
+```python
+# 4.python控制流的梯度计算
+import torch
+
+def f(a):
+    b = a * 2
+    # print(b.norm())
+    while b.norm() < 1000:
+        b = b * 2
+    if b.sum() > 0:
+        c = b
+    else:
+        c = 100 * b
+    return c
+
+a = torch.randn(size=(), requires_grad=True)
+# print(a)
+d = f(a)
+d.backward()
+# print(a.grad)
+print(a.grad == d / a)
+```
+
+## 2.6 概率
+
+```python
+# 1.基本概率论
+import torch
+from torch.distributions import multinomial
+from d2l import torch as d2l
+
+fair_probs = torch.ones([6]) / 6
+print(multinomial.Multinomial(1, fair_probs).sample())
+
+print(multinomial.Multinomial(10, fair_probs).sample())
+
+# 将结果存储为32位浮点数以进⾏除法
+counts = multinomial.Multinomial(1000, fair_probs).sample()
+print(counts / 1000) # 相对频率作为估计值
+
+counts = multinomial.Multinomial(10, fair_probs).sample((500,))
+cum_counts = counts.cumsum(dim=0)
+estimates = cum_counts / cum_counts.sum(dim=1, keepdims=True)
+d2l.set_figsize((6, 4.5))
+for i in range(6):
+    d2l.plt.plot(estimates[:, i].numpy(), label=("P(die=" + str(i + 1) + ")"))
+d2l.plt.axhline(y=0.167, color='black', linestyle='dashed')
+d2l.plt.gca().set_xlabel('Groups of experiments')
+d2l.plt.gca().set_ylabel('Estimated probability')
+d2l.plt.legend()
+```
+
+```python
+# 2.查找模块中的所有函数和类
+import torch
+
+print(dir(torch.distributions))
+```
+
+***
+
+# 三、线性神经网络
+
+## 3.1 线性回归
+
+```python
+# 1.矢量化加速
+import math
+import time
+import numpy as np
+import torch
+from d2l import torch as d2l
+
+n = 10000
+a = torch.ones(n)
+b = torch.ones(n)
+
+class Timer: #@save
+    """记录多次运⾏时间"""
+    def __init__(self):
+        self.times = []
+        self.start()
+    def start(self):
+        """启动计时器"""
+        self.tik = time.time()
+    def stop(self):
+        """停⽌计时器并将时间记录在列表中"""
+        self.times.append(time.time() - self.tik)
+        return self.times[-1]
+    def avg(self):
+        """返回平均时间"""
+        return sum(self.times) / len(self.times)
+    def sum(self):
+        """返回时间总和"""
+        return sum(self.times)
+    def cumsum(self):
+        """返回累计时间"""
+        return np.array(self.times).cumsum().tolist()
+
+c = torch.zeros(n)
+timer = Timer()
+for i in range(n):
+    c[i] = a[i] + b[i]
+print(f'{timer.stop():.5f} sec')
+
+timer.start()
+d = a + b
+print(f'{timer.stop():.5f} sec')
+```
+
+```python
+# 2.正太分布与平方损失
+import math
+import time
+import numpy as np
+import torch
+from d2l import torch as d2l
+
+def normal(x, mu, sigma):
+    p = 1 / math.sqrt(2 * math.pi * sigma**2)
+    return p * np.exp(-0.5 / sigma**2 * (x - mu)**2)
+
+# 再次使⽤numpy进⾏可视化
+x = np.arange(-7, 7, 0.01)
+# 均值和标准差对
+params = [(0, 1), (0, 2), (3, 1)]
+d2l.plot(x, [normal(x, mu, sigma) for mu, sigma in params], xlabel='x', ylabel='p(x)', figsize=(4.5, 2.5), legend=[f'mean {mu}, std {sigma}' for mu, sigma in params])
+```
+
+## 3.2 线性回归的从零开始实现
+
+```python
+# 1.生成数据集
+import random
+import torch
+from d2l import torch as d2l
+
+def synthetic_data(w, b, num_examples): #@save
+    """⽣成y=Xw+b+噪声"""
+    X = torch.normal(0, 1, (num_examples, len(w)))
+    y = torch.matmul(X, w) + b
+    y += torch.normal(0, 0.01, y.shape)
+    return X, y.reshape((-1, 1))
+
+true_w = torch.tensor([2, -3.4])
+true_b = 4.2
+features, labels = synthetic_data(true_w, true_b, 1000)
+
+print('features:', features[0],'\nlabel:', labels[0])
+
+d2l.set_figsize()
+d2l.plt.scatter(features[:, (1)].detach().numpy(), labels.detach().numpy(), 1);
+```
+
+```python
+# 2.读取数据集
+import random
+import torch
+from d2l import torch as d2l
+
+def synthetic_data(w, b, num_examples): #@save
+    """⽣成y=Xw+b+噪声"""
+    X = torch.normal(0, 1, (num_examples, len(w)))
+    y = torch.matmul(X, w) + b
+    y += torch.normal(0, 0.01, y.shape)
+    return X, y.reshape((-1, 1))
+
+true_w = torch.tensor([2, -3.4])
+true_b = 4.2
+features, labels = synthetic_data(true_w, true_b, 1000)
+
+print('features:', features[0],'\nlabel:', labels[0])
+
+d2l.set_figsize()
+d2l.plt.scatter(features[:, (1)].detach().numpy(), labels.detach().numpy(), 1);
+
+def data_iter(batch_size, features, labels):
+    num_examples = len(features)
+    indices = list(range(num_examples))
+    # 这些样本是随机读取的，没有特定的顺序
+    random.shuffle(indices)
+    for i in range(0, num_examples, batch_size):
+        batch_indices = torch.tensor(
+            indices[i: min(i + batch_size, num_examples)])
+        yield features[batch_indices], labels[batch_indices]
+
+batch_size = 10
+for X, y in data_iter(batch_size, features, labels):
+    print(X, '\n', y)
+    break
+```
+
+```python
+# 3.初始化模型参数
+import torch
+
+
+w = torch.normal(0, 0.01, size=(2,1), requires_grad=True)
+b = torch.zeros(1, requires_grad=True)
+```
+
+```python
+# 4.定义模型
+import torch
+
+
+def linreg(X, w, b): #@save
+    """线性回归模型"""
+    return torch.matmul(X, w) + b
+```
+
+```python
+# 5.定义损失函数
+def squared_loss(y_hat, y): #@save
+    """均⽅损失"""
+    return (y_hat - y.reshape(y_hat.shape)) ** 2 / 2
+```
+
+```python
+# 6.定义优化算法
+import torch
+
+
+def sgd(params, lr, batch_size): #@save
+    """⼩批量随机梯度下降"""
+    with torch.no_grad():
+        for param in params:
+            param -= lr * param.grad / batch_size
+            param.grad.zero_()
+```
+
+```python
+# 7.训练
+import random
+import torch
+from d2l import torch as d2l
+
+
+def synthetic_data(w, b, num_examples): #@save
+    """⽣成y=Xw+b+噪声"""
+    X = torch.normal(0, 1, (num_examples, len(w)))
+    y = torch.matmul(X, w) + b
+    y += torch.normal(0, 0.01, y.shape)
+    return X, y.reshape((-1, 1))
+
+true_w = torch.tensor([2, -3.4])
+true_b = 4.2
+features, labels = synthetic_data(true_w, true_b, 1000)
+
+print('features:', features[0],'\nlabel:', labels[0])
+
+d2l.set_figsize()
+d2l.plt.scatter(features[:, (1)].detach().numpy(), labels.detach().numpy(), 1);
+
+def data_iter(batch_size, features, labels):
+    num_examples = len(features)
+    indices = list(range(num_examples))
+    # 这些样本是随机读取的，没有特定的顺序
+    random.shuffle(indices)
+    for i in range(0, num_examples, batch_size):
+        batch_indices = torch.tensor(
+            indices[i: min(i + batch_size, num_examples)])
+        yield features[batch_indices], labels[batch_indices]
+
+batch_size = 10
+for X, y in data_iter(batch_size, features, labels):
+    print(X, '\n', y)
+    break
+
+
+
+w = torch.normal(0, 0.01, size=(2,1), requires_grad=True)
+b = torch.zeros(1, requires_grad=True)
+
+
+def linreg(X, w, b): #@save
+    """线性回归模型"""
+    return torch.matmul(X, w) + b
+
+
+def squared_loss(y_hat, y): #@save
+    """均⽅损失"""
+    return (y_hat - y.reshape(y_hat.shape)) ** 2 / 2
+
+
+def sgd(params, lr, batch_size): #@save
+    """⼩批量随机梯度下降"""
+    with torch.no_grad():
+        for param in params:
+            param -= lr * param.grad / batch_size
+            param.grad.zero_()
+
+
+lr = 0.03
+num_epochs = 3
+net = linreg
+loss = squared_loss
+
+for epoch in range(num_epochs):
+    for X, y in data_iter(batch_size, features, labels):
+        l = loss(net(X, w, b), y) # X和y的⼩批量损失
+        # 因为l形状是(batch_size,1)，⽽不是⼀个标量。l中的所有元素被加到⼀起，
+        # 并以此计算关于[w,b]的梯度
+        l.sum().backward()
+        sgd([w, b], lr, batch_size) # 使⽤参数的梯度更新参数
+    with torch.no_grad():
+        train_l = loss(net(features, w, b), labels)
+        print(f'epoch {epoch + 1}, loss {float(train_l.mean()):f}')
+
+print(f'w的估计误差: {true_w - w.reshape(true_w.shape)}')
+print(f'b的估计误差: {true_b - b}')
+```
+
+## 3.3 线性回归的简洁实现
+
+```python
+import numpy as np
+import torch
+from torch import nn
+from torch.utils import data
+from d2l import torch as d2l
+
+true_w = torch.tensor([2, -3.4])
+true_b = 4.2
+features, labels = d2l.synthetic_data(true_w, true_b, 1000)
+
+# 读取数据集
+def load_array(data_arrays, batch_size, is_train=True): #@save
+    """构造⼀个PyTorch数据迭代器"""
+    dataset = data.TensorDataset(*data_arrays)
+    return data.DataLoader(dataset, batch_size, shuffle=is_train)
+
+
+batch_size = 10
+data_iter = load_array((features, labels), batch_size)
+
+print(next(iter(data_iter)))
+
+# 3.定义模型
+# nn是神经⽹络的缩写
+net = nn.Sequential(nn.Linear(2, 1))
+
+# 4.初始化模型参数
+net[0].weight.data.normal_(0, 0.01)
+print(net[0].bias.data.fill_(0))
+
+# 5.定义损失函数
+loss = nn.MSELoss()
+
+# 6.定义优化算法
+trainer = torch.optim.SGD(net.parameters(), lr=0.03)
+
+# 7.训练
+num_epochs = 3
+for epoch in range(num_epochs):
+    for X, y in data_iter:
+        l = loss(net(X) ,y)
+        trainer.zero_grad()
+        l.backward()
+        trainer.step()
+    l = loss(net(features), labels)
+    print(f'epoch {epoch + 1}, loss {l:f}')
+
+
+w = net[0].weight.data
+print('w的估计误差：', true_w - w.reshape(true_w.shape))
+b = net[0].bias.data
+print('b的估计误差：', true_b - b)
+```
+
+## 3.5 图像分类数据集
+
+```python
+import torch
+import torchvision
+from torch.utils import data
+from torchvision import transforms
+from d2l import torch as d2l
+
+d2l.use_svg_display()
+
+# 1.读取数据集
+# 通过ToTensor实例将图像数据从PIL类型变换成32位浮点数格式，
+# 并除以255使得所有像素的数值均在0到1之间
+trans = transforms.ToTensor()
+mnist_train = torchvision.datasets.FashionMNIST(root="../data", train=True, transform=trans, download=True)
+mnist_test = torchvision.datasets.FashionMNIST(root="../data", train=False, transform=trans, download=True)
+print(len(mnist_train), len(mnist_test))
+print(mnist_train[0][0].shape)
+
+def get_fashion_mnist_labels(labels): #@save
+    """返回Fashion-MNIST数据集的⽂本标签"""
+    text_labels = ['t-shirt', 'trouser', 'pullover', 'dress', 'coat', 'sandal', 'shirt', 'sneaker', 'bag', 'ankle boot']
+    return [text_labels[int(i)] for i in labels]
+
+def show_images(imgs, num_rows, num_cols, titles=None, scale=1.5): #@save
+    """绘制图像列表"""
+    figsize = (num_cols * scale, num_rows * scale)
+    _, axes = d2l.plt.subplots(num_rows, num_cols, figsize=figsize)
+    axes = axes.flatten()
+    for i, (ax, img) in enumerate(zip(axes, imgs)):
+        if torch.is_tensor(img):
+            # 图⽚张量
+            ax.imshow(img.numpy())
+        else:
+            # PIL图⽚
+            ax.imshow(img)
+        ax.axes.get_xaxis().set_visible(False)
+        ax.axes.get_yaxis().set_visible(False)
+        if titles:
+            ax.set_title(titles[i])
+    return axes
+
+
+X, y = next(iter(data.DataLoader(mnist_train, batch_size=18)))
+show_images(X.reshape(18, 28, 28), 2, 9, titles=get_fashion_mnist_labels(y))
+
+# 2.读取⼩批量
+batch_size = 256
+def get_dataloader_workers(): #@save
+    """使⽤4个进程来读取数据"""
+    return 4
+train_iter = data.DataLoader(mnist_train, batch_size, shuffle=True, num_workers=get_dataloader_workers())
+timer = d2l.Timer()
+for X, y in train_iter:
+    continue
+print(f'{timer.stop():.2f} sec')
+
+# 3.整合所有组件
+def load_data_fashion_mnist(batch_size, resize=None): #@save
+    """下载Fashion-MNIST数据集，然后将其加载到内存中"""
+    trans = [transforms.ToTensor()]
+    if resize:
+        trans.insert(0, transforms.Resize(resize))
+    trans = transforms.Compose(trans)
+    mnist_train = torchvision.datasets.FashionMNIST(root="../data", train=True, transform=trans, download=True)
+    mnist_test = torchvision.datasets.FashionMNIST(root="../data", train=False, transform=trans, download=True)
+    return (data.DataLoader(mnist_train, batch_size, shuffle=True, num_workers=get_dataloader_workers()), data.DataLoader(mnist_test, batch_size, shuffle=False, num_workers=get_dataloader_workers()))
+
+train_iter, test_iter = load_data_fashion_mnist(32, resize=64)
+for X, y in train_iter:
+    print(X.shape, X.dtype, y.shape, y.dtype)
+    break
+
+print(torch.Size([32, 1, 64, 64]), torch.float32, torch.Size([32]), torch.int64)
+```
+
+## 3.6 softmax回归的从零开始实现
+
+```python
+import torch
+import torchvision
+from torch.utils import data
+from torchvision import transforms
+from d2l import torch as d2l
+
+d2l.use_svg_display()
+
+# 1.读取数据集
+# 通过ToTensor实例将图像数据从PIL类型变换成32位浮点数格式，
+# 并除以255使得所有像素的数值均在0到1之间
+trans = transforms.ToTensor()
+mnist_train = torchvision.datasets.FashionMNIST(root="../data", train=True, transform=trans, download=True)
+mnist_test = torchvision.datasets.FashionMNIST(root="../data", train=False, transform=trans, download=True)
+print(len(mnist_train), len(mnist_test))
+print(mnist_train[0][0].shape)
+
+def get_fashion_mnist_labels(labels): #@save
+    """返回Fashion-MNIST数据集的⽂本标签"""
+    text_labels = ['t-shirt', 'trouser', 'pullover', 'dress', 'coat', 'sandal', 'shirt', 'sneaker', 'bag', 'ankle boot']
+    return [text_labels[int(i)] for i in labels]
+
+def show_images(imgs, num_rows, num_cols, titles=None, scale=1.5): #@save
+    """绘制图像列表"""
+    figsize = (num_cols * scale, num_rows * scale)
+    _, axes = d2l.plt.subplots(num_rows, num_cols, figsize=figsize)
+    axes = axes.flatten()
+    for i, (ax, img) in enumerate(zip(axes, imgs)):
+        if torch.is_tensor(img):
+            # 图⽚张量
+            ax.imshow(img.numpy())
+        else:
+            # PIL图⽚
+            ax.imshow(img)
+        ax.axes.get_xaxis().set_visible(False)
+        ax.axes.get_yaxis().set_visible(False)
+        if titles:
+            ax.set_title(titles[i])
+    return axes
+
+
+X, y = next(iter(data.DataLoader(mnist_train, batch_size=18)))
+show_images(X.reshape(18, 28, 28), 2, 9, titles=get_fashion_mnist_labels(y))
+
+# 2.读取⼩批量
+batch_size = 256
+def get_dataloader_workers(): #@save
+    """使⽤4个进程来读取数据"""
+    return 4
+train_iter = data.DataLoader(mnist_train, batch_size, shuffle=True, num_workers=get_dataloader_workers())
+timer = d2l.Timer()
+for X, y in train_iter:
+    continue
+print(f'{timer.stop():.2f} sec')
+
+# 3.整合所有组件
+def load_data_fashion_mnist(batch_size, resize=None): #@save
+    """下载Fashion-MNIST数据集，然后将其加载到内存中"""
+    trans = [transforms.ToTensor()]
+    if resize:
+        trans.insert(0, transforms.Resize(resize))
+    trans = transforms.Compose(trans)
+    mnist_train = torchvision.datasets.FashionMNIST(root="../data", train=True, transform=trans, download=True)
+    mnist_test = torchvision.datasets.FashionMNIST(root="../data", train=False, transform=trans, download=True)
+    return (data.DataLoader(mnist_train, batch_size, shuffle=True, num_workers=get_dataloader_workers()), data.DataLoader(mnist_test, batch_size, shuffle=False, num_workers=get_dataloader_workers()))
+
+train_iter, test_iter = load_data_fashion_mnist(32, resize=64)
+for X, y in train_iter:
+    print(X.shape, X.dtype, y.shape, y.dtype)
+    break
+
+print(torch.Size([32, 1, 64, 64]), torch.float32, torch.Size([32]), torch.int64)
+```
+
+## 3.7 softmax回归的简洁实现
+
+```python
+import torch
+from torch import nn
+from d2l import torch as d2l
+
+
+batch_size = 256
+train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size)
+
+# 1.初始化模型参数
+# PyTorch不会隐式地调整输⼊的形状。因此，
+# 我们在线性层前定义了展平层（flatten），来调整⽹络输⼊的形状
+net = nn.Sequential(nn.Flatten(), nn.Linear(784, 10))
+def init_weights(m):
+    if type(m) == nn.Linear:
+        nn.init.normal_(m.weight, std=0.01)
+net.apply(init_weights);
+
+# 2.重新审视Softmax的实现
+loss = nn.CrossEntropyLoss(reduction='none')
+
+# 3.优化算法
+trainer = torch.optim.SGD(net.parameters(), lr=0.1)
+
+# 4.训练
+num_epochs = 10
+d2l.train_ch3(net, train_iter, test_iter, loss, num_epochs, trainer)
+```
+
+***
+
+# 四、多层感知机
